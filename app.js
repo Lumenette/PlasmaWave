@@ -12,7 +12,7 @@
   // État de l'application
   // ====================================================================
   const DEFAUTS = { T: 300, f: 12, theta: 30, pol: "TE", ne0: 1e12 };
-  const etat = { ...DEFAUTS, lecture: true, balayage: false };
+  const etat = { ...DEFAUTS, lecture: true, balayage: false, vue: "champ" };
   let res = null;          // résultats physiques du réglage courant
   let phase = 0;           // phase de l'animation (rad)
   let temps = 0;           // temps de l'animation (s), pour l'agitation des particules
@@ -215,10 +215,91 @@
     ctx.restore();
   }
 
+
+  /**
+   * Vue « ondes séparées » : chaque onde est tracée le long de son rayon.
+   * Valeur en un point situé à la distance d de l'origine sur le rayon :
+   *   incidente  : cos(k0 d − phase)                  (d < 0 avant l'interface)
+   *   réfléchie  : |r| cos(k0 d − phase + arg r)
+   *   transmise  : |t| cos(k0 √εr d − phase + arg t)
+   *   évanescente: |t| exp(−z/δ) cos(kx x − phase + arg t), le long de l'interface
+   */
+  function ruban(ctx, x0, y0, ux, uy, d0, d1, lambdaPx, amp, dephasage, couleur, epaisseur = 2.5) {
+    const nx = -uy, ny = ux; // direction perpendiculaire au rayon
+    ctx.save();
+    ctx.strokeStyle = couleur;
+    ctx.globalAlpha = 0.25;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 5]);
+    ctx.beginPath();
+    ctx.moveTo(x0 + ux * d0, y0 + uy * d0);
+    ctx.lineTo(x0 + ux * d1, y0 + uy * d1);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = epaisseur;
+    ctx.lineJoin = "round";
+    ctx.shadowColor = "rgba(0,0,0,0.6)";
+    ctx.shadowBlur = 4;
+    ctx.beginPath();
+    const pas = (d1 - d0) / 220;
+    for (let k = 0; k <= 220; k++) {
+      const d = d0 + k * pas;
+      const v = amp * Math.cos((2 * Math.PI * d) / lambdaPx - phase + dephasage);
+      const x = x0 + ux * d + nx * v, y = y0 + uy * d + ny * v;
+      k ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function dessinerOndesSeparees(ctx, ox, oy, ech, th) {
+    const A = Math.min(SW, SH) * 0.05;      // amplitude visuelle de l'onde incidente
+    // Longueur du rayon jusqu'au bord du cadre
+    const bord = (ux, uy) => Math.min(
+      Math.abs(ux) > 1e-6 ? (ux > 0 ? SW - ox : ox) / Math.abs(ux) : 1e9,
+      Math.abs(uy) > 1e-6 ? (uy > 0 ? SH - oy : oy) / Math.abs(uy) : 1e9) - 14;
+    const argR = Math.atan2(res.r.im, res.r.re), argT = Math.atan2(res.t.im, res.t.re);
+    const absR = P.abs(res.r), absT = Math.min(P.abs(res.t), 2);
+
+    // Incidente : arrive depuis le bas à gauche (en coordonnées écran, y vers le bas)
+    ruban(ctx, ox, oy, Math.cos(th), -Math.sin(th), -bord(-Math.cos(th), Math.sin(th)), 0, ech, A, 0, "#ffffff");
+    // Réfléchie : repart vers le haut à gauche
+    if (absR > 0.02) ruban(ctx, ox, oy, -Math.cos(th), -Math.sin(th), 0, bord(-Math.cos(th), -Math.sin(th)), ech, A * absR, argR, "#ffd166");
+
+    if (res.propagative) {
+      // Transmise : longueur d'onde λ0 / √εr dans le plasma
+      const tt = res.thetaT;
+      if (absT > 0.02) ruban(ctx, ox, oy, Math.cos(tt), -Math.sin(tt), 0, bord(Math.cos(tt), -Math.sin(tt)), ech / Math.sqrt(res.eps), A * absT, argT, "#3ddc97");
+    } else {
+      // Évanescente : le champ se propage le long de l'interface et décroît en exp(−z/δ)
+      const dPx = (res.delta / res.lambda0) * ech;
+      const grad = ctx.createLinearGradient(ox, 0, ox + 3 * dPx, 0);
+      grad.addColorStop(0, "rgba(255,93,108,0.30)");
+      grad.addColorStop(1, "rgba(255,93,108,0)");
+      ctx.fillStyle = grad;
+      ctx.fillRect(ox, 0, 3 * dPx, SH);
+      const s = Math.sin(th);
+      const lx = s > 1e-3 ? ech / s : 1e9; // longueur d'onde le long de l'interface : λ0 / sin θ
+      for (const f of [0.1, 0.8, 1.8]) {
+        const z = f * dPx;
+        if (z > SW / 2 - 10) continue;
+        const amp = 0.8 * A * absT * Math.exp(-f);
+        if (amp < 1.5) continue;
+        ruban(ctx, ox + z, oy, 0, -1, -SH / 2, SH / 2, lx, amp, argT, "#ff8a9a", 2);
+      }
+    }
+  }
+
   function dessinerScene() {
     if (!champRe || SW === 0) return;
     const ctx = sctx;
 
+    if (etat.vue === "ondes") {
+      // Vue « ondes séparées » : fond neutre, chaque onde dessinée le long de son rayon
+      ctx.fillStyle = "#070c1a";
+      ctx.fillRect(0, 0, SW, SH);
+    } else {
     // 1. Champ réel : Re(U e^{-i phase}) = Ur cos(phase) + Ui sin(phase)
     const c = Math.cos(phase), s = Math.sin(phase), data = image.data, inv = 1 / champMax;
     for (let k = 0; k < champRe.length; k++) {
@@ -234,6 +315,7 @@
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
     ctx.drawImage(hors, 0, 0, SW, SH);
+    }
 
     const ox = SW / 2, oy = SH / 2;
     const ech = SW / (2 * L); // pixels par λ0
@@ -289,6 +371,7 @@
     // 4. Rayons : longueur des flèches réfléchie et transmise selon √R et √T
     const lg = Math.min(SW, SH) * 0.42;
     const th = res.theta;
+    if (etat.vue === "ondes") dessinerOndesSeparees(ctx, ox, oy, ech, th);
     fleche(ctx, ox - lg * Math.cos(th), oy + lg * Math.sin(th), ox, oy, "#ffffff");
     if (res.R > 0.01) {
       const lr = lg * Math.sqrt(res.R);
@@ -643,6 +726,10 @@
     $("valTh").textContent = `${etat.theta.toFixed(1)}°`;
     $("valNe").textContent = `${sci(etat.ne0, 1)} m⁻³`;
     $("chipNe0").textContent = sci(etat.ne0, 1);
+    $("vueChamp").classList.toggle("on", etat.vue === "champ");
+    $("vueOndes").classList.toggle("on", etat.vue === "ondes");
+    $("legChamp").style.display = etat.vue === "champ" ? "" : "none";
+    $("legOndes").style.display = etat.vue === "ondes" ? "" : "none";
     $("polTE").classList.toggle("on", etat.pol === "TE");
     $("polTM").classList.toggle("on", etat.pol === "TM");
     $("btnPlay").textContent = etat.lecture ? "⏸ Pause" : "▶ Lecture";
@@ -712,8 +799,11 @@
       st.className = "status err";
       st.innerHTML = `<b>Onde évanescente.</b> f = ${etat.f.toFixed(2)} MHz &lt; fp = ${fp} MHz, donc εr = ${e} &lt; 0. Réflexion totale. Un champ existe dans le plasma sur δ = ${longueur(res.delta)}, mais il ne transporte aucune puissance moyenne vers la profondeur.`;
     }
-    $("sceneNote").textContent =
-      "Trait plein : interface. Pointillés : normale. Longueur des flèches réfléchie et transmise proportionnelle à √R et √T. " +
+    $("sceneNote").textContent = etat.vue === "ondes"
+      ? "Chaque onde est tracée séparément le long de son rayon, avec une amplitude proportionnelle à |r| et |t|. " +
+        "Dans le plasma, la longueur d'onde vaut λ0 / √εr. Une onde évanescente se propage le long de l'interface et s'atténue en exp(−z/δ) (zone rose). " +
+        "La vue « Champ total » montre la somme réelle de ces ondes, d'où le motif en damier quand la réflexion est forte."
+      : "Trait plein : interface. Pointillés : normale. Longueur des flèches réfléchie et transmise proportionnelle à √R et √T. " +
       "Particules illustratives : leur espacement moyen varie comme Ne^(−1/3), il augmente quand on chauffe, et leur agitation croît avec √T.";
   }
 
@@ -764,6 +854,8 @@
       notifier("Copie impossible : copier l'adresse de la page.");
     }
   });
+  $("vueChamp").addEventListener("click", () => { etat.vue = "champ"; majAffichage(); dessinerScene(); });
+  $("vueOndes").addEventListener("click", () => { etat.vue = "ondes"; majAffichage(); dessinerScene(); });
   $("btnPng").addEventListener("click", () => {
     const a = document.createElement("a");
     a.download = `plasma_${etat.pol}_${etat.T}K_${etat.f}MHz_${etat.theta}deg.png`;

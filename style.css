@@ -122,6 +122,11 @@ kbd {
 .sw.r { background: var(--r); }
 .sw.t { background: var(--t); }
 .sw.cur { background: var(--cur); }
+.sw.inc { background: #ffffff; }
+.sw.eva { background: #ff8a9a; }
+.seg.vue { width: 260px; }
+.seg.vue button { font-size: 12px; padding: 6px 0; }
+#legChamp, #legOndes { display: inline-flex; gap: 12px; }
 .dot { display: inline-block; border-radius: 50%; }
 .dot.ion { width: 9px; height: 9px; background: #f3f6ff; border: 1px solid #000; }
 .dot.el { width: 6px; height: 6px; background: #0a0f1c; border: 1px solid #fff; }
