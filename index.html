@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PlasmaWave · Réflexion d'une onde sur un plasma chauffé</title>
+  <meta name="description" content="Simulation interactive de la réflexion et de la transmission d'une onde électromagnétique sur un plasma soumis à une dilatation thermique.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23070b16'/%3E%3Cpath d='M3 18c3-8 6-8 9 0s6 8 9 0 6-8 8-2' fill='none' stroke='%2300d0ff' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <svg viewBox="0 0 32 32" class="logo" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#0e1830"/><path d="M3 18c3-8 6-8 9 0s6 8 9 0 6-8 8-2" fill="none" stroke="#00d0ff" stroke-width="3" stroke-linecap="round"/></svg>
+    <div>
+      <h1>PlasmaWave</h1>
+      <p>Réflexion d'une onde électromagnétique sur un plasma soumis à une dilatation thermique</p>
+    </div>
+  </div>
+  <div class="chips">
+    <span class="chip">T<sub>0</sub> = 300 K</span>
+    <span class="chip">N<sub>e0</sub> = <b id="chipNe0">1.0 × 10¹²</b> m⁻³</span>
+    <span class="chip muted">plasma froid · sans collisions · semi-infini</span>
+  </div>
+</header>
+
+<main class="layout">
+
+  <!-- ============ COMMANDES ============ -->
+  <aside class="panel controls" aria-label="Commandes">
+    <h2>Commandes</h2>
+
+    <div class="ctrl">
+      <label for="rngT">Température <span class="val" id="valT"></span></label>
+      <input type="range" id="rngT" min="150" max="3000" step="10">
+      <small>Modifie la densité électronique par dilatation</small>
+    </div>
+
+    <div class="ctrl">
+      <label for="rngF">Fréquence de l'onde <span class="val" id="valF"></span></label>
+      <input type="range" id="rngF" min="1" max="60" step="0.1">
+    </div>
+
+    <div class="ctrl">
+      <label for="rngTh">Angle d'incidence <span class="val" id="valTh"></span></label>
+      <input type="range" id="rngTh" min="0" max="89" step="0.1">
+      <small>Mesuré par rapport à la normale à l'interface</small>
+    </div>
+
+    <div class="ctrl">
+      <label>Polarisation</label>
+      <div class="seg" role="group" aria-label="Polarisation">
+        <button id="polTE" type="button">TE</button>
+        <button id="polTM" type="button">TM</button>
+      </div>
+    </div>
+
+    <div class="ctrl">
+      <label for="rngNe"><span>Densité de référence N<sub>e0</sub></span> <span class="val" id="valNe"></span></label>
+      <input type="range" id="rngNe" min="0" max="100" step="1">
+      <small>Densité à T<sub>0</sub>, pour comparer plusieurs états initiaux</small>
+    </div>
+
+    <div class="btnrow">
+      <button id="btnPlay" class="btn primary" type="button">⏸ Pause</button>
+      <button id="btnReset" class="btn" type="button">↺ Réinitialiser</button>
+    </div>
+
+    <h3>Outils</h3>
+    <button id="btnBrewster" class="btn wide" type="button">Aller à l'angle de Brewster (TM)</button>
+    <button id="btnSweep" class="btn wide" type="button">Balayage automatique en fréquence</button>
+    <button id="btnShare" class="btn wide" type="button">Copier le lien de ce réglage</button>
+
+    <h3>Raccourcis clavier</h3>
+    <p class="keys"><kbd>Espace</kbd> lecture / pause · <kbd>←</kbd><kbd>→</kbd> angle · <kbd>P</kbd> polarisation · <kbd>R</kbd> réinitialiser</p>
+  </aside>
+
+  <!-- ============ SCHEMA ============ -->
+  <section class="stage">
+    <div class="panel scene-card">
+      <div class="scene-head">
+        <h2>Schéma dynamique</h2>
+        <div class="seg vue" role="group" aria-label="Type de vue">
+          <button id="vueChamp" type="button" class="on">Champ total</button>
+          <button id="vueOndes" type="button">Ondes séparées</button>
+        </div>
+        <div class="legend">
+          <span id="legChamp"><span><i class="sw warm"></i>champ &gt; 0</span> <span><i class="sw cool"></i>champ &lt; 0</span></span>
+          <span id="legOndes" style="display:none"><span><i class="sw inc"></i>incidente</span> <span><i class="sw cur"></i>réfléchie</span> <span><i class="sw t"></i>transmise</span> <span><i class="sw eva"></i>évanescente</span></span>
+          <span><i class="dot ion"></i>ions</span>
+          <span><i class="dot el"></i>électrons</span>
+          <button id="btnPng" class="btn small" type="button">Exporter PNG</button>
+        </div>
+      </div>
+      <div class="scene-wrap"><canvas id="scene" aria-label="Schéma animé de l'onde à l'interface vide / plasma"></canvas></div>
+      <p class="note" id="sceneNote"></p>
+    </div>
+    <div id="status" class="status" role="status"></div>
+  </section>
+
+  <!-- ============ RESULTATS ============ -->
+  <aside class="panel results" aria-label="Résultats">
+    <h2>Résultats en temps réel</h2>
+    <div class="metrics">
+      <div class="metric"><span>Densité électronique N<sub>e</sub> (m⁻³)</span><b id="mNe"></b><em id="mNeSub"></em></div>
+      <div class="metric"><span>Fréquence plasma f<sub>p</sub></span><b id="mFp"></b><em id="mFpSub"></em></div>
+      <div class="metric"><span>Permittivité relative ε<sub>r</sub></span><b id="mEps"></b><em id="mEpsSub"></em></div>
+      <div class="metric"><span>État dans le plasma</span><b id="mEtat"></b><em id="mEtatSub"></em></div>
+      <div class="metric"><span>Seuil à cet angle f<sub>p</sub> / cos θ</span><b id="mSeuil"></b><em id="mSeuilSub"></em></div>
+      <div class="metric"><span id="mXLab"></span><b id="mX"></b><em id="mXSub"></em></div>
+    </div>
+
+    <h3>Bilan de puissance</h3>
+    <div class="bar" aria-label="Bilan de puissance">
+      <div id="barR" class="seg-r"><span id="barRt"></span></div>
+      <div id="barT" class="seg-t"><span id="barTt"></span></div>
+    </div>
+    <div class="bar-legend">
+      <span><i class="sw r"></i>Réfléchie <b id="mR"></b></span>
+      <span><i class="sw t"></i>Transmise <b id="mT"></b></span>
+    </div>
+    <p class="sum">R + T = <b id="mSum"></b> <small>(modèle sans pertes)</small></p>
+
+    <h3>Coefficients de Fresnel</h3>
+    <ul class="kv" id="coeffs"></ul>
+
+    <h3>Angles remarquables</h3>
+    <ul class="kv" id="angles"></ul>
+  </aside>
+</main>
+
+<!-- ============ COURBES ============ -->
+<section class="charts">
+  <div class="panel chart-card">
+    <div class="chart-head">
+      <h2>R et T en fonction de la fréquence</h2>
+      <button id="csvF" class="btn small" type="button">CSV</button>
+    </div>
+    <div class="chart-legend"><span><i class="sw r"></i>R réfléchie</span><span><i class="sw t"></i>T transmise</span><span><i class="sw cur"></i>réglage actuel</span></div>
+    <canvas id="chF" class="chart"></canvas>
+    <p class="note" id="capF"></p>
+  </div>
+  <div class="panel chart-card">
+    <div class="chart-head">
+      <h2>R et T en fonction de l'angle</h2>
+      <button id="csvA" class="btn small" type="button">CSV</button>
+    </div>
+    <div class="chart-legend"><span><i class="sw r"></i>R réfléchie</span><span><i class="sw t"></i>T transmise</span><span><i class="sw cur"></i>réglage actuel</span></div>
+    <canvas id="chA" class="chart"></canvas>
+    <p class="note" id="capA"></p>
+  </div>
+  <div class="panel chart-card">
+    <div class="chart-head"><h2>Amplitude du champ dans le plasma</h2></div>
+    <div class="chart-legend"><span><i class="sw t"></i>|champ| / amplitude incidente</span></div>
+    <canvas id="chZ" class="chart"></canvas>
+    <p class="note" id="capZ"></p>
+  </div>
+</section>
+
+<!-- ============ EXPLORATIONS ============ -->
+<section class="explore">
+  <h2 class="section-title">Explorations</h2>
+  <div class="cards">
+    <article class="panel card">
+      <span class="num">1</span>
+      <h3>Effet du chauffage</h3>
+      <p>Fréquence et angle fixes. En chauffant, N<sub>e</sub> diminue, donc f<sub>p</sub> diminue et ε<sub>r</sub> augmente : le plasma passe de la réflexion totale à une transmission partielle.</p>
+      <div class="btnrow"><button class="btn small" data-scn="froid" type="button">Plasma froid (300 K)</button><button class="btn small" data-scn="chaud" type="button">Plasma chauffé (1500 K)</button></div>
+    </article>
+    <article class="panel card">
+      <span class="num">2</span>
+      <h3>Propagation ou évanescence</h3>
+      <p>La transition a lieu quand f cos θ = f<sub>p</sub>, c'est-à-dire ε<sub>r</sub> = sin²θ. Lancer le balayage et observer le passage de la zone grise des courbes.</p>
+      <div class="btnrow"><button class="btn small" data-scn="balayage" type="button">Lancer le balayage</button></div>
+    </article>
+    <article class="panel card">
+      <span class="num">3</span>
+      <h3>Polarisations TE et TM</h3>
+      <p>Au-dessus du seuil, la courbe de R selon l'angle s'annule en TM à l'angle de Brewster (tan θ<sub>B</sub> = √ε<sub>r</sub>). En TE, R ne s'annule jamais.</p>
+      <div class="btnrow"><button class="btn small" data-scn="brewTM" type="button">Brewster en TM</button><button class="btn small" data-scn="brewTE" type="button">Même angle en TE</button></div>
+    </article>
+    <article class="panel card">
+      <span class="num">4</span>
+      <h3>Influence de l'angle</h3>
+      <p>Même plasma, même fréquence f = 11 MHz &gt; f<sub>p</sub>. À 20° l'onde passe, à 50° elle devient évanescente : comparer f à f<sub>p</sub> ne suffit pas.</p>
+      <div class="btnrow"><button class="btn small" data-scn="angle20" type="button">θ = 20°</button><button class="btn small" data-scn="angle50" type="button">θ = 50°</button></div>
+    </article>
+    <article class="panel card">
+      <span class="num">5</span>
+      <h3>Conservation de l'énergie</h3>
+      <p>Pour tous les réglages, R + T = 100 %. Dans le cas évanescent, R = 100 % et T = 0 %, même si un champ existe dans le plasma : il ne transporte aucune puissance moyenne.</p>
+      <div class="btnrow"><button class="btn small" data-scn="dense" type="button">Plasma dense, TM</button></div>
+    </article>
+  </div>
+</section>
+
+<!-- ============ MODELE ============ -->
+<section class="model panel">
+  <h2>Modèle et formules</h2>
+  <div class="formulas">
+    <div>
+      <h3>Plasma soumis à la dilatation</h3>
+      <p class="f">N<sub>e</sub>(T) = N<sub>e0</sub> · T<sub>0</sub> / T</p>
+      <p class="f">ω<sub>p</sub> = √( N<sub>e</sub> e² / (ε<sub>0</sub> m<sub>e</sub>) )</p>
+      <p class="f">ε<sub>r</sub> = 1 − ω<sub>p</sub>² / ω²</p>
+    </div>
+    <div>
+      <h3>Nombres d'onde</h3>
+      <p class="f">k<sub>x</sub> = k<sub>0</sub> sin θ (conservé à l'interface)</p>
+      <p class="f">k<sub>z1</sub> = k<sub>0</sub> cos θ</p>
+      <p class="f">k<sub>z2</sub> = k<sub>0</sub> √( ε<sub>r</sub> − sin²θ )</p>
+      <p>Propagation si ε<sub>r</sub> &gt; sin²θ, soit <b>ω cos θ &gt; ω<sub>p</sub></b>. Sinon k<sub>z2</sub> est imaginaire (Im k<sub>z2</sub> &gt; 0) et le champ décroît : onde évanescente.</p>
+    </div>
+    <div>
+      <h3>Relations de Fresnel</h3>
+      <p class="f">r<sub>TE</sub> = (k<sub>z1</sub> − k<sub>z2</sub>) / (k<sub>z1</sub> + k<sub>z2</sub>)</p>
+      <p class="f">r<sub>TM</sub> = (ε<sub>r</sub> k<sub>z1</sub> − k<sub>z2</sub>) / (ε<sub>r</sub> k<sub>z1</sub> + k<sub>z2</sub>)</p>
+      <p class="f">t = 1 + r</p>
+      <p>En TM, r et t sont écrits pour le champ magnétique H.</p>
+    </div>
+    <div>
+      <h3>Conversion en puissances</h3>
+      <p class="f">R = |r|²</p>
+      <p class="f">T<sub>TE</sub> = Re(k<sub>z2</sub>) / k<sub>z1</sub> · |t|²</p>
+      <p class="f">T<sub>TM</sub> = Re(k<sub>z2</sub> / ε<sub>r</sub>) / k<sub>z1</sub> · |t|²</p>
+      <p>Rapport des flux de Poynting selon la normale. Cas évanescent : |r| = 1, donc R = 1 et T = 0.</p>
+    </div>
+    <div>
+      <h3>Grandeurs dérivées</h3>
+      <p class="f">δ = 1 / Im(k<sub>z2</sub>) (profondeur de pénétration)</p>
+      <p class="f">tan θ<sub>B</sub> = √ε<sub>r</sub> (Brewster, TM)</p>
+      <p class="f">sin θ<sub>lim</sub> = √ε<sub>r</sub> (si 0 &lt; ε<sub>r</sub> &lt; 1)</p>
+    </div>
+    <div>
+      <h3>Hypothèses</h3>
+      <p>Plasma idéal, non magnétisé, sans collisions, homogène et semi-infini (pas de réflexion sur une face arrière). Dilatation à pression constante, degré d'ionisation constant, température commune aux espèces. Plasma modèle : ces hypothèses ne décrivent pas à elles seules l'ionosphère réelle. Les particules du schéma sont illustratives.</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  Réalisé par <b>Hiba El Moumene</b> · ENSA Tanger, GSR1 · Mini-projet d'électromagnétisme, encadré par M. El Mamouni
+</footer>
+
+<div id="toast" class="toast" role="status"></div>
+
+<script src="physics.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
