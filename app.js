@@ -12,7 +12,7 @@
   // État de l'application
   // ====================================================================
   const DEFAUTS = { T: 300, f: 12, theta: 30, pol: "TE", ne0: 1e12 };
-  const etat = { ...DEFAUTS, lecture: true, balayage: false, vue: "champ" };
+  const etat = { ...DEFAUTS, lecture: true, balayage: false, vue: "ondes" };
   let res = null;          // résultats physiques du réglage courant
   let phase = 0;           // phase de l'animation (rad)
   let temps = 0;           // temps de l'animation (s), pour l'agitation des particules
